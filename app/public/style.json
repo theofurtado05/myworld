@@ -2,7 +2,7 @@
     "version": 8,
     "name": "Positron",
     "metadata": {
-      "mapbox:autocomposite": false,
+      "mapbox:autocomposite": true,
       "mapbox:groups": {
         "101da9f13b64a08fa4b6ac1168e89e5f": {
           "collapsed": false,
@@ -22,11 +22,11 @@
     "sources": {
       "openmaptiles": {
         "type": "vector",
-        "url": "https://api.maptiler.com/tiles/v3-openmaptiles/tiles.json?key={key}"
+        "url": "https://api.maptiler.com/tiles/v3-openmaptiles/tiles.json?key=LQLgMKfn7cLsj9Kyjve3"
       }
     },
     "sprite": "https://openmaptiles.github.io/positron-gl-style/sprite",
-    "glyphs": "https://api.maptiler.com/fonts/{fontstack}/{range}.pbf?key={key}",
+    "glyphs": "https://api.maptiler.com/fonts/{fontstack}/{range}.pbf?key=LQLgMKfn7cLsj9Kyjve3",
     "layers": [
       {
         "id": "background",
