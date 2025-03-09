@@ -12,7 +12,7 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
 
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: '/style.json',
+      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
       zoom: 2,
       center: [0, 20], // Vista global para facilitar a busca de qualquer país
       canvasContextAttributes: {antialias: true}
