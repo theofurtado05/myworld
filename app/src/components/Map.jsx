@@ -274,9 +274,7 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
 
   return (
     <>
-        <div style={{
-            zIndex: 999,
-            }} ref={mapContainer} className="h-full w-full max-w-4xl max-h-600"/>
+        <div ref={mapContainer} className="h-full w-full max-w-4xl max-h-600"/>
     </>
   );
 };
