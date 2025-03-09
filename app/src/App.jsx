@@ -21,15 +21,7 @@ function App() {
 
   return (
     <div className="h-full h-screen flex flex-col items-center justify-center">
-      <div className="h-full w-full max-w-4xl max-h-600">
-        {/* Componente do Mapa */}
-        <Map 
-          searchQuery={searchQuery}
-          loading={loading}
-          setLoading={setLoading}
-          error={error}
-          setError={setError}
-        />
+      <div className="h-full w-full max-w-4xl h-full">
         
         {/* Barra de Busca */}
         <SearchBar 
@@ -38,7 +30,14 @@ function App() {
           handleSearch={handleSearch}
         />
 
-        
+        {/* Componente do Mapa */}
+        <Map 
+          searchQuery={searchQuery}
+          loading={loading}
+          setLoading={setLoading}
+          error={error}
+          setError={setError}
+        />
         
         {/* Mensagens de Status */}
         <StatusMessage loading={loading} error={error} />

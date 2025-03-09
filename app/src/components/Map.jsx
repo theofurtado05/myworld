@@ -276,8 +276,6 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
     <>
         <div style={{
             zIndex: 999,
-            height: "600px", // Explicit height
-            width: "100%" 
             }} ref={mapContainer} className="h-full w-full max-w-4xl max-h-600"/>
     </>
   );
