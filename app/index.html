@@ -1,4 +1,4 @@
-<!doctype html>
+<!-- <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -10,4 +10,315 @@
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
+</html> -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Globo 3D com Foco no Brasil</title>
+    <meta charset='utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel='stylesheet' href='https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.css' />
+    <script src='https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.js'></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        html, body, #map { height: 100%; }
+        
+        .search-container {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translate(-50%, 0);
+            z-index: 1;
+            display: flex;
+            width: 80%;
+            max-width: 500px;
+        }
+        
+        #search-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px 0 0 4px;
+            font-size: 16px;
+        }
+        
+        #search-button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 0 4px 4px 0;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        #search-button:hover {
+            background-color: #45a049;
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+        
+        .legend-item {
+            margin-bottom: 5px;
+        }
+        
+        .color-box {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        
+        .marker {
+            width: 25px;
+            height: 25px;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .error-message {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px;
+            background-color: rgba(255, 0, 0, 0.8);
+            color: white;
+            border-radius: 4px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="search-container">
+    <input type="text" id="search-input" placeholder="Digite o nome da cidade (Ex: Buzios, RJ)">
+    <button id="search-button">Buscar</button>
+</div>
+
+<div id="loading" class="loading">Buscando localização...</div>
+<div id="error-message" class="error-message">Localização não encontrada. Tente novamente.</div>
+
+<div class="legend">
+    <div class="legend-item"><span class="color-box" style="background: rgba(128, 128, 128, 0.5);"></span>Países</div>
+    <div class="legend-item"><span class="color-box" style="background: rgba(216, 170, 230, 0.6);"></span>Estados</div>
+    <div class="legend-item"><span class="color-box" style="background: rgba(144, 238, 144, 0.6);"></span>Municípios (Brasil)</div>
+    <div class="legend-item"><span class="color-box" style="background: #e74c3c;"></span>Cidade Marcada</div>
+</div>
+
+<script>
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+        zoom: 3.5,
+        center: [-55, -15], // Centralizado no Brasil
+        canvasContextAttributes: {antialias: true}
+    });
+
+    map.on('style.load', () => {
+        map.setProjection({
+            type: 'globe'
+        });
+    });
+    
+    // Variável para armazenar o marcador atual
+    let currentMarker = null;
+
+    map.on('load', () => {
+        // Adicionar fonte de dados para países
+        map.addSource('countries', {
+            'type': 'vector',
+            'url': 'https://studio.mapbox.com/tilesets/mapbox.country-boundaries-v1'
+        });
+
+        // Adicionar camada para países (cinza)
+        map.addLayer({
+            'id': 'countries-fill',
+            'type': 'fill',
+            'source': 'countries',
+            'source-layer': 'country_boundaries',
+            'paint': {
+                'fill-color': 'rgba(128, 128, 128, 0.5)', // Cinza
+                'fill-outline-color': 'rgba(100, 100, 100, 1)'
+            }
+        });
+
+        // Adicionar fonte de dados para estados/províncias
+        map.addSource('admin1', {
+            'type': 'vector',
+            'url': 'https://studio.mapbox.com/tilesets/mapbox.boundaries-adm1-v3'
+        });
+
+        // Adicionar camada para estados/províncias
+        map.addLayer({
+            'id': 'admin1-fill',
+            'type': 'fill',
+            'source': 'admin1',
+            'source-layer': 'boundaries_admin_1',
+            'paint': {
+                'fill-color': 'rgba(216, 170, 230, 0.6)',
+                'fill-outline-color': 'rgba(148, 0, 211, 0.8)'
+            },
+            // Filtrar para mostrar apenas os estados do Brasil
+            'filter': ['==', ['get', 'iso_3166_1'], 'BR']
+        });
+
+        // Adicionar bordas dos estados para melhor visualização
+        map.addLayer({
+            'id': 'admin1-borders',
+            'type': 'line',
+            'source': 'admin1',
+            'source-layer': 'boundaries_admin_1',
+            'paint': {
+                'line-color': 'rgba(148, 0, 211, 0.8)',
+                'line-width': 0.5
+            },
+            // Filtrar para mostrar apenas os estados do Brasil
+            'filter': ['==', ['get', 'iso_3166_1'], 'BR']
+        });
+
+        // Adicionar fonte de dados para municípios (cidades) do Brasil
+        map.addSource('admin2', {
+            'type': 'vector',
+            'url': 'https://studio.mapbox.com/tilesets/mapbox.boundaries-adm2-v3'
+        });
+
+        // Adicionar camada para municípios do Brasil
+        map.addLayer({
+            'id': 'admin2-fill',
+            'type': 'fill',
+            'source': 'admin2',
+            'source-layer': 'boundaries_admin_2',
+            'paint': {
+                'fill-color': 'rgba(144, 238, 144, 0.6)', // Verde claro
+                'fill-outline-color': 'rgba(34, 139, 34, 0.8)' // Verde escuro
+            },
+            // Filtrar para mostrar apenas municípios do Brasil
+            'filter': ['==', ['get', 'iso_3166_1'], 'BR']
+        });
+
+        // Adicionar bordas dos municípios para melhor visualização
+        map.addLayer({
+            'id': 'admin2-borders',
+            'type': 'line',
+            'source': 'admin2',
+            'source-layer': 'boundaries_admin_2',
+            'paint': {
+                'line-color': 'rgba(34, 139, 34, 0.6)', // Verde escuro
+                'line-width': 0.3
+            },
+            // Filtrar para mostrar apenas municípios do Brasil
+            'filter': ['==', ['get', 'iso_3166_1'], 'BR'],
+            'minzoom': 5 // Mostrar apenas quando der zoom suficiente
+        });
+        
+        // Adicionar evento para mostrar nome do município ao clicar
+        map.on('click', 'admin2-fill', (e) => {
+            if (e.features.length > 0) {
+                const feature = e.features[0];
+                new maplibregl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(`<strong>Município:</strong> ${feature.properties.name}`)
+                    .addTo(map);
+            }
+        });
+        
+        // Mudar o cursor ao passar por cima de um município
+        map.on('mouseenter', 'admin2-fill', () => {
+            map.getCanvas().style.cursor = 'pointer';
+        });
+        
+        map.on('mouseleave', 'admin2-fill', () => {
+            map.getCanvas().style.cursor = '';
+        });
+    });
+
+    // Função para buscar localização usando OpenStreetMap Nominatim API
+    async function searchLocation(query) {
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            
+            if (data.length > 0) {
+                const location = {
+                    lat: parseFloat(data[0].lat),
+                    lon: parseFloat(data[0].lon),
+                    name: data[0].display_name
+                };
+                return location;
+            }
+            return null;
+        } catch (error) {
+            console.error('Erro ao buscar localização:', error);
+            return null;
+        }
+    }
+
+    // Função para adicionar um marcador no mapa
+    function addMarker(location) {
+        if (currentMarker) {
+            currentMarker.remove();
+        }
+
+        const el = document.createElement('div');
+        el.className = 'marker';
+        
+        currentMarker = new maplibregl.Marker(el)
+            .setLngLat([location.lon, location.lat])
+            .setPopup(new maplibregl.Popup().setText(location.name))
+            .addTo(map);
+
+        map.flyTo({
+            center: [location.lon, location.lat],
+            zoom: 10,
+            speed: 1.5,
+            curve: 1.5
+        });
+    }
+
+    // Event listener para o botão de busca
+    document.getElementById('search-button').addEventListener('click', async () => {
+        const query = document.getElementById('search-input').value.trim();
+        if (query) {
+            const location = await searchLocation(query);
+            if (location) {
+                addMarker(location);
+            }
+        }
+    });
+    
+    // Event listener para permitir pesquisa ao pressionar Enter
+    document.getElementById('search-button').addEventListener('click', async () => {
+        const query = document.getElementById('search-input').value.trim();
+        if (query) {
+            const location = await searchLocation(query);
+            if (location) {
+                addMarker(location);
+            } else {
+                alert('Localização não encontrada. Tente novamente.');
+            }
+        }
+    });
+</script>
+</body>
 </html>
