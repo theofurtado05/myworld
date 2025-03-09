@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import maplibregl from 'maplibre-gl';
-import CustomMarker from './CustomMarker';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import '../index.css'
 
 const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
   const mapContainer = useRef(null);
@@ -8,13 +9,16 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
   const [currentMarker, setCurrentMarker] = useState(null);
 
   useEffect(() => {
+    console.log("Map: ", map)
+
     if (map.current) return; // initialize map only once
 
+    
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      style: '/style.json',
       zoom: 2,
-      center: [0, 20], // Vista global para facilitar a busca de qualquer país
+      center: [-55, -15], // Vista global para facilitar a busca de qualquer país
       canvasContextAttributes: {antialias: true}
     });
 
@@ -270,7 +274,11 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
 
   return (
     <>
-        <div ref={mapContainer} className="h-full w-full max-w-4xl max-h-600"/>
+        <div style={{
+            zIndex: 999,
+            height: "600px", // Explicit height
+            width: "100%" 
+            }} ref={mapContainer} className="h-full w-full max-w-4xl max-h-600"/>
     </>
   );
 };
