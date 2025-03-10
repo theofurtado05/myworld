@@ -11,6 +11,55 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError, curre
   const [currentMarker, setCurrentMarker] = useState(null);
   const [markedLocations, setMarkedLocations] = useState({});
   const [openMap, setOpenMap] = useState(false);
+  const [rotationInterval, setRotationInterval] = useState(null);
+
+// Função para iniciar a rotação automática do globo
+const startAutoRotate = () => {
+    if (rotationInterval) return; // Evita múltiplas execuções
+    
+    const interval = setInterval(() => {
+        if (map.current) {
+            map.current.rotateTo((map.current.getBearing() + 0.5) % 360, {
+                duration: 5000, // 5 segundos para transição suave
+                easing: (t) => t, // Movimento linear
+            });
+        }
+    }, 5000); // Atualiza a rotação a cada 5s
+
+    setRotationInterval(interval);
+};
+
+// Função para parar a rotação automática
+const stopAutoRotate = () => {
+    if (rotationInterval) {
+        clearInterval(rotationInterval);
+        setRotationInterval(null);
+    }
+};
+
+useEffect(() => {
+    if (map.current) {
+        // Inicia rotação quando o mapa carregar
+        startAutoRotate();
+
+        // Parar rotação quando houver interação do usuário
+        const stopOnInteraction = () => {
+            stopAutoRotate();
+            // Reinicia a rotação após 10 segundos sem interação
+            setTimeout(() => {
+                startAutoRotate();
+            }, 10000);
+        };
+
+        // map.current.on("mousedown", stopOnInteraction);
+        // map.current.on("wheel", stopOnInteraction);
+        map.current.on("touchstart", stopOnInteraction);
+    }
+
+    return () => {
+        stopAutoRotate(); // Limpa o intervalo ao desmontar o componente
+    };
+}, []);
   
   // Referência para o unsubscribe da snapshot do Firestore
   const unsubscribeRef = useRef(null);
@@ -522,7 +571,7 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError, curre
 
   return (
     <>
-      <div ref={mapContainer} className="h-full w-full max-w-4xl max-h-600" style={{marginTop:'-30px !important'}} />
+      <div ref={mapContainer} className="h-full w-full" style={{marginTop:'-30px !important'}} />
       <style jsx>{`
         .hidden {
           display: none;
