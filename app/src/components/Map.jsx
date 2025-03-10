@@ -13,7 +13,7 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
     
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: '/style.json',
+      style: `/style.json?timestamp=${new Date().getTime()}`,
       zoom: 2,
       center: [-55, -15], // Vista global para facilitar a busca de qualquer país
       canvasContextAttributes: {antialias: true}
