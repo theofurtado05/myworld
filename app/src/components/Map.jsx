@@ -1,16 +1,19 @@
 import React, { useRef, useEffect, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import '../index.css'
+import { doc, setDoc, getDoc, collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../services/firebase';
+import '../index.css';
 
-// Renomeie o componente para MapComponent para evitar conflito com o Map nativo
-const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => {
+const MapComponent = ({ searchQuery, loading, setLoading, error, setError, currentUser }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const [currentMarker, setCurrentMarker] = useState(null);
-  // Use um objeto normal em vez de Map
   const [markedLocations, setMarkedLocations] = useState({});
   const [openMap, setOpenMap] = useState(false);
+  
+  // Referência para o unsubscribe da snapshot do Firestore
+  const unsubscribeRef = useRef(null);
 
   useEffect(() => {
     setOpenMap(true);
@@ -19,7 +22,7 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
       container: mapContainer.current,
       style: `https://basemaps.cartocdn.com/gl/positron-gl-style/style.json`,
       zoom: 2,
-      center: [-55, -15], // Vista global para facilitar a busca de qualquer país
+      center: [-55, -15],
       canvasContextAttributes: {antialias: true}
     });
 
@@ -35,11 +38,68 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
       setupMarkedLocationsLayer();
     });
 
-    return () => map.current.remove();
+    return () => {
+      // Limpar o listener do Firestore
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+      map.current.remove();
+    };
   }, []);
 
+  // Atualizar os locais marcados quando o usuário muda
+  useEffect(() => {
+    if (currentUser && map.current) {
+      // Cancelar qualquer listener anterior
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+      
+      // Carregar os locais marcados do usuário
+      loadUserMarkedLocations();
+    } else {
+      // Se não há usuário, limpar os locais marcados
+      setMarkedLocations({});
+      updateMarkedLocationsLayer({});
+    }
+  }, [currentUser]);
+
+  // Função para carregar os locais marcados do usuário do Firestore
+  const loadUserMarkedLocations = async () => {
+    if (!currentUser) return;
+
+    try {
+        const userLocationsRef = collection(db, 'users', currentUser.uid, 'markedLocations');
+        
+        const unsubscribe = onSnapshot(userLocationsRef, (snapshot) => {
+            const locationsData = {};
+            snapshot.forEach((doc) => {
+                let data = doc.data();
+                
+                // 🛠️ Converter `geojson` de string para objeto antes de atualizar o estado
+                if (data.geojson && typeof data.geojson === "string") {
+                    try {
+                        data.geojson = JSON.parse(data.geojson);
+                    } catch (error) {
+                        console.error("Erro ao converter geojson:", error);
+                    }
+                }
+
+                locationsData[doc.id] = data;
+            });
+
+            setMarkedLocations(locationsData);
+            updateMarkedLocationsLayer(locationsData);
+        });
+
+        unsubscribeRef.current = unsubscribe;
+    } catch (error) {
+        console.error('Erro ao carregar locais marcados:', error);
+    }
+};
+
+  // Funções de configuração do mapa (sem alterações)
   const setupMarkedLocationsLayer = () => {
-    // Adicionar fonte para localidades marcadas
     map.current.addSource('marked-locations', {
       type: 'geojson',
       data: {
@@ -48,7 +108,6 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
       }
     });
 
-    // Adicionar camada para localidades marcadas
     map.current.addLayer({
       id: 'marked-locations-fill',
       type: 'fill',
@@ -61,6 +120,7 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
   };
 
   const setupMapLayers = () => {
+    // (Código existente mantido sem alterações)
     // Adicionar fonte de dados para países
     map.current.addSource('countries', {
       'type': 'vector',
@@ -158,6 +218,7 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
   };
 
   const setupMapEvents = () => {
+    // (Código existente mantido sem alterações)
     // Evento para países
     map.current.on('click', 'countries-fill', (e) => {
       if (e.features.length > 0) {
@@ -207,12 +268,10 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
     setError(false);
     
     try {
-      // Especificar o nível de detalhe na busca (continent, country, state, city)
       const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&polygon_geojson=1`);
       const data = await response.json();
       
       if (data.length > 0) {
-        // Tentativa de obter informações sobre país
         const result = data[0];
         const location = {
           lat: parseFloat(result.lat),
@@ -223,7 +282,8 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
           countryCode: result.address.country_code?.toUpperCase() || '',
           geojson: result.geojson || null,
           osmId: result.osm_id,
-          osmType: result.osm_type
+          osmType: result.osm_type,
+          timestamp: new Date().toISOString() // Adicionar timestamp para ordenação
         };
         
         setLoading(false);
@@ -241,72 +301,112 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
     }
   };
 
-  // Função para marcar uma localidade
+  // Função para marcar uma localidade e salvar no Firestore
   const markLocation = async (location) => {
-    try {
-      // Se não temos o GeoJSON, precisamos buscá-lo
-      if (!location.geojson) {
-        const osmType = location.osmType === 'relation' ? 'R' : 
-                       location.osmType === 'way' ? 'W' : 'N';
-        const response = await fetch(`https://nominatim.openstreetmap.org/details.php?osmtype=${osmType}&osmid=${location.osmId}&class=${location.type}&format=json&polygon_geojson=1`);
-        const data = await response.json();
-        if (data && data.geometry) {
-          location.geojson = data.geometry;
-        }
-      }
-
-      if (location.geojson) {
-        // Usar um objeto normal em vez de Map
-        const newMarkedLocations = { ...markedLocations };
-        newMarkedLocations[location.osmId] = location;
-        setMarkedLocations(newMarkedLocations);
-        
-        // Atualizar a camada no mapa
-        updateMarkedLocationsLayer(newMarkedLocations);
-        
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Erro ao marcar localidade:', error);
-      return false;
+    if (!currentUser) {
+        alert("Você precisa fazer login para salvar locais!");
+        return false;
     }
-  };
 
-  // Função para desmarcar uma localidade
-  const unmarkLocation = (location) => {
-    const newMarkedLocations = { ...markedLocations };
-    delete newMarkedLocations[location.osmId];
-    setMarkedLocations(newMarkedLocations);
+    try {
+        // Se não temos o GeoJSON, precisamos buscá-lo
+        if (!location.geojson) {
+            const osmType = location.osmType === 'relation' ? 'R' :
+                location.osmType === 'way' ? 'W' : 'N';
+
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/details.php?osmtype=${osmType}&osmid=${location.osmId}&class=${location.type}&format=json&polygon_geojson=1`
+            );
+
+            const data = await response.json();
+            if (data && data.geometry) {
+                location.geojson = data.geometry;
+            }
+        }
+
+        // 🛠️ Verificar se geojson é válido antes de salvar
+        if (!location.geojson || !location.geojson.type || !location.geojson.coordinates) {
+            console.error("GeoJSON inválido, não salvando:", location.geojson);
+            return false;
+        }
+
+        // ✅ Transformar `geojson` em string antes de salvar no Firestore
+        const locationData = {
+            ...location,
+            geojson: JSON.stringify(location.geojson),
+            timestamp: new Date().toISOString(), // Adiciona um timestamp para ordenação
+        };
+
+        const locationRef = doc(db, 'users', currentUser.uid, 'markedLocations', location.osmId.toString());
+        await setDoc(locationRef, locationData);
+
+        // Atualizar estado local
+        const newMarkedLocations = { ...markedLocations };
+        newMarkedLocations[location.osmId] = locationData;
+        setMarkedLocations(newMarkedLocations);
+
+        // Atualizar camada no mapa
+        updateMarkedLocationsLayer(newMarkedLocations);
+
+        return true;
+    } catch (error) {
+        console.error('Erro ao marcar localidade:', error);
+        return false;
+    }
+};
+
+
+  // Função para desmarcar uma localidade e remover do Firestore
+  const unmarkLocation = async (location) => {
+    if (!currentUser) return;
     
-    // Atualizar a camada no mapa
-    updateMarkedLocationsLayer(newMarkedLocations);
+    try {
+      // Atualizar o estado local
+      const newMarkedLocations = { ...markedLocations };
+      delete newMarkedLocations[location.osmId];
+      setMarkedLocations(newMarkedLocations);
+      
+      // Atualizar a camada no mapa
+      updateMarkedLocationsLayer(newMarkedLocations);
+      
+      // Remover do Firestore
+      const locationRef = doc(db, 'users', currentUser.uid, 'markedLocations', location.osmId.toString());
+      await setDoc(locationRef, { deleted: true }, { merge: true });
+    } catch (error) {
+      console.error('Erro ao desmarcar localidade:', error);
+    }
   };
 
   // Função para atualizar a camada de localidades marcadas
   const updateMarkedLocationsLayer = (locationsObj) => {
     if (!map.current || !map.current.getSource('marked-locations')) return;
-    
+
     const features = [];
-    // Iterar sobre um objeto em vez de um Map
+
     Object.values(locationsObj).forEach(location => {
-      if (location.geojson) {
-        features.push({
-          type: 'Feature',
-          geometry: location.geojson,
-          properties: {
-            name: location.name,
-            id: location.osmId
-          }
-        });
-      }
+        if (location.geojson && !location.deleted) {
+            try {
+                features.push({
+                    type: 'Feature',
+                    geometry: location.geojson, // 🚀 Certifique-se de que o geojson está formatado corretamente
+                    properties: {
+                        name: location.name,
+                        id: location.osmId
+                    }
+                });
+            } catch (error) {
+                console.error("Erro ao adicionar feature no mapa:", error);
+            }
+        }
     });
-    
+
+    // 🚀 Atualizar a fonte de dados do mapa
     map.current.getSource('marked-locations').setData({
-      type: 'FeatureCollection',
-      features: features
+        type: 'FeatureCollection',
+        features: features
     });
-  };
+};
+
 
   // Função para adicionar um marcador no mapa
   const addMarker = (location) => {
@@ -329,8 +429,12 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
     el.style.border = '2px solid white';
     el.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
     
-    // Verificar se a localidade está marcada usando o objeto
-    const isMarked = location.osmId && markedLocations && markedLocations[location.osmId];
+    // Verificar se a localidade está marcada
+    const isMarked = location.osmId && markedLocations && markedLocations[location.osmId] && !markedLocations[location.osmId].deleted;
+    
+    // Texto adicional para usuários não logados
+    const loginText = !currentUser ? 
+      '<div class="text-sm text-red-500 my-2">Faça login para salvar locais</div>' : '';
     
     // Criar popup com botões de marcar/desmarcar
     const popup = new maplibregl.Popup({
@@ -342,6 +446,7 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
           <strong>${isCountry ? 'País' : 'Local'}:</strong> ${location.country}
           ${location.countryCode ? `<br><strong>Código:</strong> ${location.countryCode}` : ''}
         </div>
+        ${loginText}
         <div class="marker-popup-actions">
           <button id="btn-mark" class="popup-btn ${isMarked ? 'hidden' : ''}" style="background-color: #2ecc71; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Marcar</button>
           <button id="btn-unmark" class="popup-btn ${!isMarked ? 'hidden' : ''}" style="background-color: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Desmarcar</button>
@@ -374,8 +479,8 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
       }
       
       if (btnUnmark) {
-        btnUnmark.addEventListener('click', () => {
-          unmarkLocation(location);
+        btnUnmark.addEventListener('click', async () => {
+          await unmarkLocation(location);
           btnUnmark.classList.add('hidden');
           btnMark.classList.remove('hidden');
         });
@@ -395,7 +500,7 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
     });
   };
 
-  // Expor a função de busca
+  // Expor a função de busca globalmente
   useEffect(() => {
     if (window) {
       window.searchLocationFromMap = async (query) => {
@@ -408,17 +513,16 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
       };
     }
     
-    // Retornar uma função de limpeza para evitar memory leaks
     return () => {
       if (window) {
         window.searchLocationFromMap = null;
       }
     };
-  }, [markedLocations]); // Adicionar markedLocations como dependência
+  }, [markedLocations, currentUser]);
 
   return (
     <>
-      <div ref={mapContainer} className="h-full w-full max-w-4xl max-h-600" />
+      <div ref={mapContainer} className="h-full w-full max-w-4xl max-h-600" style={{marginTop:'-30px !important'}} />
       <style jsx>{`
         .hidden {
           display: none;
@@ -438,5 +542,4 @@ const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => 
   );
 };
 
-// Renomeie a exportação para MapComponent
 export default MapComponent;
