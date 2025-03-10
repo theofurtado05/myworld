@@ -9,10 +9,7 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
   const [currentMarker, setCurrentMarker] = useState(null);
 
   useEffect(() => {
-    console.log("Map: ", map)
-
-    if (map.current) return; // initialize map only once
-
+    if (map.current) return; 
     
     map.current = new maplibregl.Map({
       container: mapContainer.current,
