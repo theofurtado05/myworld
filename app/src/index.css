@@ -31,3 +31,59 @@ code {
     monospace;
 }
 
+/* Adicione isso ao seu arquivo index.css */
+
+.marker {
+  cursor: pointer;
+}
+
+.marker-popup {
+  font-family: 'Arial', sans-serif;
+}
+
+.marker-popup-header {
+  margin-bottom: 10px;
+}
+
+.marker-popup-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.popup-btn {
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease-in-out;
+}
+
+.popup-btn:hover {
+  opacity: 0.9;
+}
+
+/* Botão de marcar */
+.popup-btn:first-child {
+  background-color: #2ecc71;
+  color: white;
+  margin-right: 5px;
+}
+
+/* Botão de desmarcar */
+.popup-btn:last-child {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.hidden {
+  display: none;
+}
+
+/* Melhorar o estilo do popup */
+.maplibregl-popup-content {
+  padding: 10px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}

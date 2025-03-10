@@ -3,15 +3,17 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '../index.css'
 
-const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
+// Renomeie o componente para MapComponent para evitar conflito com o Map nativo
+const MapComponent = ({ searchQuery, loading, setLoading, error, setError }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const [currentMarker, setCurrentMarker] = useState(null);
-
-  const [openMap, setOpenMap] = useState(false)
+  // Use um objeto normal em vez de Map
+  const [markedLocations, setMarkedLocations] = useState({});
+  const [openMap, setOpenMap] = useState(false);
 
   useEffect(() => {
-    setOpenMap(true)
+    setOpenMap(true);
     
     map.current = new maplibregl.Map({
       container: mapContainer.current,
@@ -30,13 +32,33 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
     map.current.on('load', () => {
       setupMapLayers();
       setupMapEvents();
+      setupMarkedLocationsLayer();
     });
 
     return () => map.current.remove();
   }, []);
 
+  const setupMarkedLocationsLayer = () => {
+    // Adicionar fonte para localidades marcadas
+    map.current.addSource('marked-locations', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: []
+      }
+    });
 
-  
+    // Adicionar camada para localidades marcadas
+    map.current.addLayer({
+      id: 'marked-locations-fill',
+      type: 'fill',
+      source: 'marked-locations',
+      paint: {
+        'fill-color': 'rgba(0, 255, 0, 0.4)',
+        'fill-outline-color': 'rgba(0, 180, 0, 0.8)'
+      }
+    });
+  };
 
   const setupMapLayers = () => {
     // Adicionar fonte de dados para países
@@ -186,7 +208,7 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
     
     try {
       // Especificar o nível de detalhe na busca (continent, country, state, city)
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1`);
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&polygon_geojson=1`);
       const data = await response.json();
       
       if (data.length > 0) {
@@ -198,7 +220,10 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
           name: result.display_name,
           type: result.type,
           country: result.address.country || result.display_name,
-          countryCode: result.address.country_code?.toUpperCase() || ''
+          countryCode: result.address.country_code?.toUpperCase() || '',
+          geojson: result.geojson || null,
+          osmId: result.osm_id,
+          osmType: result.osm_type
         };
         
         setLoading(false);
@@ -216,13 +241,80 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
     }
   };
 
+  // Função para marcar uma localidade
+  const markLocation = async (location) => {
+    try {
+      // Se não temos o GeoJSON, precisamos buscá-lo
+      if (!location.geojson) {
+        const osmType = location.osmType === 'relation' ? 'R' : 
+                       location.osmType === 'way' ? 'W' : 'N';
+        const response = await fetch(`https://nominatim.openstreetmap.org/details.php?osmtype=${osmType}&osmid=${location.osmId}&class=${location.type}&format=json&polygon_geojson=1`);
+        const data = await response.json();
+        if (data && data.geometry) {
+          location.geojson = data.geometry;
+        }
+      }
+
+      if (location.geojson) {
+        // Usar um objeto normal em vez de Map
+        const newMarkedLocations = { ...markedLocations };
+        newMarkedLocations[location.osmId] = location;
+        setMarkedLocations(newMarkedLocations);
+        
+        // Atualizar a camada no mapa
+        updateMarkedLocationsLayer(newMarkedLocations);
+        
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Erro ao marcar localidade:', error);
+      return false;
+    }
+  };
+
+  // Função para desmarcar uma localidade
+  const unmarkLocation = (location) => {
+    const newMarkedLocations = { ...markedLocations };
+    delete newMarkedLocations[location.osmId];
+    setMarkedLocations(newMarkedLocations);
+    
+    // Atualizar a camada no mapa
+    updateMarkedLocationsLayer(newMarkedLocations);
+  };
+
+  // Função para atualizar a camada de localidades marcadas
+  const updateMarkedLocationsLayer = (locationsObj) => {
+    if (!map.current || !map.current.getSource('marked-locations')) return;
+    
+    const features = [];
+    // Iterar sobre um objeto em vez de um Map
+    Object.values(locationsObj).forEach(location => {
+      if (location.geojson) {
+        features.push({
+          type: 'Feature',
+          geometry: location.geojson,
+          properties: {
+            name: location.name,
+            id: location.osmId
+          }
+        });
+      }
+    });
+    
+    map.current.getSource('marked-locations').setData({
+      type: 'FeatureCollection',
+      features: features
+    });
+  };
+
   // Função para adicionar um marcador no mapa
   const addMarker = (location) => {
     if (currentMarker) {
       currentMarker.remove();
     }
 
-    // Usar o componente CustomMarker
+    // Criar elemento para o marcador
     const el = document.createElement('div');
     el.className = 'marker';
     
@@ -237,15 +329,58 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
     el.style.border = '2px solid white';
     el.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
     
-    const marker = new maplibregl.Marker(el)
-      .setLngLat([location.lon, location.lat])
-      .setPopup(
-        new maplibregl.Popup().setHTML(`
+    // Verificar se a localidade está marcada usando o objeto
+    const isMarked = location.osmId && markedLocations && markedLocations[location.osmId];
+    
+    // Criar popup com botões de marcar/desmarcar
+    const popup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: true
+    }).setHTML(`
+      <div class="marker-popup">
+        <div class="marker-popup-header">
           <strong>${isCountry ? 'País' : 'Local'}:</strong> ${location.country}
           ${location.countryCode ? `<br><strong>Código:</strong> ${location.countryCode}` : ''}
-        `)
-      )
+        </div>
+        <div class="marker-popup-actions">
+          <button id="btn-mark" class="popup-btn ${isMarked ? 'hidden' : ''}" style="background-color: #2ecc71; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Marcar</button>
+          <button id="btn-unmark" class="popup-btn ${!isMarked ? 'hidden' : ''}" style="background-color: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Desmarcar</button>
+        </div>
+      </div>
+    `);
+
+    // Criar o marcador
+    const marker = new maplibregl.Marker(el)
+      .setLngLat([location.lon, location.lat])
+      .setPopup(popup)
       .addTo(map.current);
+    
+    // Mostrar o popup ao adicionar o marcador
+    marker.togglePopup();
+    
+    // Adicionar eventos aos botões
+    setTimeout(() => {
+      const btnMark = document.getElementById('btn-mark');
+      const btnUnmark = document.getElementById('btn-unmark');
+      
+      if (btnMark) {
+        btnMark.addEventListener('click', async () => {
+          const success = await markLocation(location);
+          if (success) {
+            btnMark.classList.add('hidden');
+            btnUnmark.classList.remove('hidden');
+          }
+        });
+      }
+      
+      if (btnUnmark) {
+        btnUnmark.addEventListener('click', () => {
+          unmarkLocation(location);
+          btnUnmark.classList.add('hidden');
+          btnMark.classList.remove('hidden');
+        });
+      }
+    }, 100);
     
     setCurrentMarker(marker);
 
@@ -261,7 +396,7 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
   };
 
   // Expor a função de busca
-  React.useEffect(() => {
+  useEffect(() => {
     if (window) {
       window.searchLocationFromMap = async (query) => {
         const location = await searchLocation(query);
@@ -272,13 +407,36 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
         return null;
       };
     }
-  }, []);
+    
+    // Retornar uma função de limpeza para evitar memory leaks
+    return () => {
+      if (window) {
+        window.searchLocationFromMap = null;
+      }
+    };
+  }, [markedLocations]); // Adicionar markedLocations como dependência
 
   return (
     <>
-        <div ref={mapContainer} className="h-full w-full max-w-4xl max-h-600"/>
+      <div ref={mapContainer} className="h-full w-full max-w-4xl max-h-600" />
+      <style jsx>{`
+        .hidden {
+          display: none;
+        }
+        .marker-popup {
+          padding: 5px;
+        }
+        .marker-popup-header {
+          margin-bottom: 10px;
+        }
+        .marker-popup-actions {
+          display: flex;
+          justify-content: center;
+        }
+      `}</style>
     </>
   );
 };
 
-export default Map;
+// Renomeie a exportação para MapComponent
+export default MapComponent;
