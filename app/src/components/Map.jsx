@@ -8,12 +8,14 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
   const map = useRef(null);
   const [currentMarker, setCurrentMarker] = useState(null);
 
+  const [openMap, setOpenMap] = useState(false)
+
   useEffect(() => {
-    if (map.current) return; 
+    setOpenMap(true)
     
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: `/style.json?timestamp=${new Date().getTime()}`,
+      style: `https://basemaps.cartocdn.com/gl/positron-gl-style/style.json`,
       zoom: 2,
       center: [-55, -15], // Vista global para facilitar a busca de qualquer país
       canvasContextAttributes: {antialias: true}
@@ -32,6 +34,9 @@ const Map = ({ searchQuery, loading, setLoading, error, setError }) => {
 
     return () => map.current.remove();
   }, []);
+
+
+  
 
   const setupMapLayers = () => {
     // Adicionar fonte de dados para países
